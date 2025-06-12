@@ -7,6 +7,7 @@ const productSchema = new mongoose.Schema({
         required: [true, "O nome do produto é obrigatório."]
     },
     unitPrice: { type: Number },
+    purchasesQty: { type: Number },
     salesperson: {
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'users',

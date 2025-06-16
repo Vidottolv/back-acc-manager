@@ -20,6 +20,19 @@ export default class SalesController {
         }
     }
 
+    static getSalesByUser = async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const salesData = await sales.find({ idUser: userId });
+            if (salesData.length === 0) {
+                return res.status(404).send({ message: "No sales found for this user." });
+            }
+            res.status(200).send(salesData);
+        } catch (error) {
+            res.status(400).send({ message: "Ocurred an error: ", status: error.status });
+        }
+    }
+
     static postSales = async (req, res) => {
         try {
             const { 
@@ -33,7 +46,7 @@ export default class SalesController {
 
             const qty = Number(productQty);
             const rate = Number(commissionRate); 
-            const user = customerName;
+            const client = customerName;
             const prod = productName;
 
             let customerRecord = await customer.findOne({ name: customerName });
@@ -61,9 +74,10 @@ export default class SalesController {
             
             let newSale = new sales({
                 ...saleData,
+                idUser: req.user.id,
                 customerId: customerRecord._id,
                 productId: productRecord._id,
-                customerName: user, 
+                customerName: client, 
                 productName: prod,
                 productQty: productQty,
                 installmentNumber: installmentNumber, 

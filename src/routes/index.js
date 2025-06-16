@@ -1,6 +1,8 @@
 import express from "express";
 import product from "./productRoutes.js"
 import sales from "./salesRoutes.js";
+import login from "./loginRoutes.js";
+import user from "./userRoutes.js";
 
 const routes = (app) => {
   app.route('/').get((req, res) => {
@@ -9,8 +11,10 @@ const routes = (app) => {
 
   app.use(
     express.json(),
+    login,
     product,
-    sales
+    sales,
+    user
   )
 }
 

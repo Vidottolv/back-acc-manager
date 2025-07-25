@@ -3,6 +3,8 @@ import product from "./productRoutes.js"
 import sales from "./salesRoutes.js";
 import login from "./loginRoutes.js";
 import user from "./userRoutes.js";
+import preference from "./preferenceRoutes.js";
+import customer from "./customerRoutes.js";
 
 const routes = (app) => {
   app.route('/').get((req, res) => {
@@ -14,7 +16,9 @@ const routes = (app) => {
     login,
     product,
     sales,
-    user
+    user,
+    preference,
+    customer
   )
 }
 

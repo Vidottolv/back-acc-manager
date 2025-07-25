@@ -1,6 +1,8 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import user from "../models/user.js";
+import preference from "../models/preferences.js";
+import SalesController from "./salesController.js";
 
 const SECRET = process.env.SECRET_KEY;
 
@@ -14,7 +16,9 @@ class AuthController {
     if (!valid) return res.status(401).json({ message: "Senha inválida" });
 
     const token = jwt.sign({ id: userData._id, username: userData.username }, SECRET, { expiresIn: "1h" });
-    return res.json({ token });
+    
+    const userPreferences = await preference.find({ idUser: userData._id });
+    return res.json({token: token, preference: userPreferences});
   }
 
   static async register(req, res) {

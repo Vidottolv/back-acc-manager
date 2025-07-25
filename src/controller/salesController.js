@@ -33,62 +33,118 @@ export default class SalesController {
         }
     }
 
+    static getMonthlySales =  async(req,res) => {
+        try {
+            const now = new Date();
+            const userId = req.user.id;
+            const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+            const startOfNextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+
+            const salesThisMonth = await sales.find({
+              expirationInstallmentDate: {
+                $gte: startOfMonth,
+                $lt: startOfNextMonth,
+              }, idUser: userId
+            });
+
+            console.log(salesThisMonth);
+
+            const qtySales = salesThisMonth.length;
+            const salesValue = salesThisMonth.reduce((acc, item) => acc + (item.salesValue ?? 0), 0);
+            const commissionValue = salesThisMonth.reduce((acc, item) => acc + (item.commissionValue ?? 0), 0);
+            const productCounts = {};
+            
+            for (const sale of salesThisMonth) {
+              const name = sale.productName;
+              productCounts[name] = (productCounts[name] || 0) + 1;
+            }        
+            const sorted = Object.entries(productCounts).sort((a, b) => b[1] - a[1]);
+            let topProducts = [];
+            if (sorted.length > 0) {
+              const maxCount = sorted[0][1];
+              topProducts = sorted.filter(([_, count]) => count === maxCount).slice(0, 2);
+            }
+            const response = {
+                salesQuantity: qtySales,
+                salesVal: salesValue,
+                commissionVal: commissionValue,
+                topProducts: topProducts.map(([productName, count]) => ({ productName, count })),
+            }
+
+            res.status(200).send(response);
+        } catch (error) {
+            res.status(400).send({ message: "Ocurred an error: ", status: error.status });
+        }
+    }
+
     static postSales = async (req, res) => {
         try {
             const { 
-                customerName, 
-                productName, 
-                installmentNumber, 
+                customerID, 
+                productID, 
+                // installmentNumber, 
                 commissionRate,
-                productQty,
+                salesValue,
                 expirationInstallmentDate,
                 ...saleData } = req.body; 
 
-            const qty = Number(productQty);
+            const salesV = Number(salesValue);
             const rate = Number(commissionRate); 
-            const client = customerName;
-            const prod = productName;
+            const client = customerID;
+            const prod = productID;
 
-            let customerRecord = await customer.findOne({ name: customerName });
-            let productRecord = await product.findOne({ productName: productName });
-            const unit = Number(productRecord?.unitPrice);
+            let customerRecord = await customer.findOne({ _id: client });
 
-            var valuePerMonth = (Number(qty * unit) * (rate / 100)) / installmentNumber;
-            console.log('qty: '+qty+' - unitPrice: '+unit+' - rate: '+rate);
-            console.log(valuePerMonth);
+            let productRecord = await product.findOne({ _id: prod });
 
-            if (installmentNumber > 1) {
-                var date = expirationInstallmentDate;
-                for (var i = 1; i <= installmentNumber; i++) {
-                    const instRecord = new installments({
-                        customerId: customerRecord._id,
-                        productId: productRecord._id,
-                        flgEnable: 1,
-                        expirationDate: addMonth(date, i - 1),
-                        installmentNumber: i,
-                        value: valuePerMonth
-                    });
-                    await instRecord.save(); 
-                }
+            var valuePerMonth = (Number(salesV  * (rate / 100)));
+            // console.log('qty: '+qty+' - unitPrice: '+unit+' - rate: '+rate);
+
+            // if (installmentNumber > 1) {
+            //     var date = expirationInstallmentDate;
+            //     for (var i = 1; i <= installmentNumber; i++) {
+            //         const instRecord = new installments({
+            //             customerId: customerRecord._id,
+            //             productId: productRecord._id,
+            //             flgEnable: 1,
+            //             expirationDate: addMonth(date, i - 1),
+            //             installmentNumber: i,
+            //             value: valuePerMonth
+            //         });
+            //         await instRecord.save(); 
+            //     }
+            // }
+            let dtCreation = saleData.dtCreation;
+
+            if (typeof dtCreation === 'string') {
+                const [date, time] = dtCreation.split(', ');
+                const [day, month, year] = date.split('/');
+                dtCreation = new Date(`${year}-${month}-${day}T${time}`);
             }
-            
+
             let newSale = new sales({
                 ...saleData,
                 idUser: req.user.id,
                 customerId: customerRecord._id,
                 productId: productRecord._id,
-                customerName: client, 
-                productName: prod,
-                productQty: productQty,
-                installmentNumber: installmentNumber, 
+                customerName: customerRecord.name, 
+                productName: productRecord.productName,
+                salesValue: salesV,
                 commissionRate: rate,
+                commissionValue: valuePerMonth,
                 expirationInstallmentDate: expirationInstallmentDate,
-                dtCreation: new Date(),
-                dtTimestamp: saleData.dtTimestamp || new Date(),
+                dtCreation: dtCreation || new Date(),
+                dtTimestamp: saleData.dtTimestamp ? new Date(saleData.dtTimestamp) : new Date(),
             });
-
-
-            const salesResponse = await newSale.save();
+            console.log(newSale)
+            const salesResponse = {};
+            try {
+                salesResponse = await newSale.save();
+            } catch (error) {
+                console.log(error)
+            }
+            customerRecord.purchasesQty = customerRecord.purchasesQty + 1;
+            
             await customerRecord.save();
             await productRecord.save();
 

@@ -16,17 +16,16 @@ const salesSchema = new mongoose.Schema(
       type: String,
       required: [true, "Informe o produto vendido."],
     },
-    productQty: {
+    salesValue: {
       type: Number,
       required: [true, "Informe quantas unidades foram vendidas."],
-    },
-    installmentNumber: {
-      type: Number,
-      required: [true, "O número de parcelas é obrigatório."],
     },
     commissionRate: {
       type: Number,
       required: [true, "Informe o percentual de comissão."],
+    },
+    commissionValue: {
+      type: Number
     },
     expirationInstallmentDate: {
       type: Date,

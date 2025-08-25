@@ -2,7 +2,7 @@ import sales from "../models/sales.js";
 import customer from "../models/customer.js";
 import product from "../models/product.js";
 import installments from "../models/installments.js";
-
+import { ObjectId } from 'mongodb';
 function addMonth(date, months) {
     const d = new Date(date);
     d.setMonth(d.getMonth() + months);
@@ -33,28 +33,115 @@ export default class SalesController {
         }
     }
 
-    static getMonthlySales =  async(req,res) => {
+    static getMonthlySales = async (req, res) => {
         try {
             const now = new Date();
             const userId = req.user.id;
             const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+            const startOfYear = new Date(Date.UTC(now.getUTCFullYear(), 0, 1));
             const startOfNextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+            const startOfNextYear = new Date(Date.UTC(now.getUTCFullYear() + 1, 0, 1));
 
             const salesThisMonth = await sales.find({
-              expirationInstallmentDate: {
+              receivementDate: {
                 $gte: startOfMonth,
                 $lt: startOfNextMonth,
-              }, idUser: userId
+              },
+              idUser: userId,
             });
-
-            console.log(salesThisMonth);
 
             const qtySales = salesThisMonth.length;
             const salesValue = salesThisMonth.reduce((acc, item) => acc + (item.salesValue ?? 0), 0);
-            const commissionValue = salesThisMonth.reduce((acc, item) => acc + (item.commissionValue ?? 0), 0);
+            const commissionValue = salesThisMonth.reduce(
+              (acc, item) => acc + (item.commissionValue ?? 0),
+              0
+            );
+
+            const topProducts = await sales.aggregate([
+              {
+                '$match': {
+                  'expirationInstallmentDate': {
+                    '$gte': startOfYear, 
+                    '$lt': startOfNextYear,
+                  }, 
+                  'idUser': new ObjectId(userId)
+                }
+              }, {
+                '$group': {
+                  '_id': {
+                    'productId': '$productId', 
+                    'productName': '$productName'
+                  }, 
+                  'totalSales': {
+                    '$sum': '$salesValue'
+                  }, 
+                  'totalQty': {
+                    '$sum': 1
+                  }
+                }
+              }, {
+                '$sort': {
+                  'totalQty': -1
+                }
+              }, {
+                '$limit': 5
+              }
+            ]);
+
+            const response = {
+                salesQuantity: qtySales,
+                salesVal: salesValue,
+                commissionVal: commissionValue,
+                topProducts: topProducts.map((p) => ({
+                    productId: p._id.productId,
+                    productName: p._id.productName,
+                    totalSales: p.totalSales,
+                    totalQuantity: p.totalQty,
+                })),
+            };
+
+        res.status(200).send(response);
+        } catch (error) {
+            console.error("Error in getMonthlySales:", error);
+            res.status(400).send({ message: "Ocurred an error: ", error: error.message });
+        }
+    };
+
+    static getSalesByMonth =  async(req,res) => {
+        try {
+            const {month, year} = req.body;
+            const userId = req.user.id;
+            const monthFromApi = month; 
+            const yearFromApi = year;
+            if (!Number.isInteger(monthFromApi) || monthFromApi < 1 || monthFromApi > 12) {
+              return res.status(400).json({ error: 'month must be an integer between 1 and 12' });
+            }
+            let dueMonth = monthFromApi + 1; 
+            let dueYear = yearFromApi;
+            if (dueMonth > 12) { 
+              dueMonth = 1;
+              dueYear += 1;
+            }
+
+            const startOfDueMonth = new Date(Date.UTC(dueYear, dueMonth - 1, 1));
+            const startOfNextMonth = new Date(Date.UTC(dueYear, dueMonth, 1));
+
+            const salesThisDueMonth = await sales.find({
+              receivementDate: { $gte: startOfDueMonth, $lt: startOfNextMonth },
+              idUser: userId
+            });
+
+            const monthlySales = await sales.find({
+              dtCreation: { $gte: startOfDueMonth, $lt: startOfNextMonth },
+              idUser: userId
+            });
+
+            const qtySales = salesThisDueMonth.length;
+            const salesValue = salesThisDueMonth.reduce((acc, item) => acc + (item.salesValue ?? 0), 0);
+            const commissionValue = salesThisDueMonth.reduce((acc, item) => acc + (item.commissionValue ?? 0), 0);
             const productCounts = {};
             
-            for (const sale of salesThisMonth) {
+            for (const sale of salesThisDueMonth) {
               const name = sale.productName;
               productCounts[name] = (productCounts[name] || 0) + 1;
             }        
@@ -65,6 +152,7 @@ export default class SalesController {
               topProducts = sorted.filter(([_, count]) => count === maxCount).slice(0, 2);
             }
             const response = {
+                sales: salesThisDueMonth,
                 salesQuantity: qtySales,
                 salesVal: salesValue,
                 commissionVal: commissionValue,
@@ -94,32 +182,17 @@ export default class SalesController {
             const prod = productID;
 
             let customerRecord = await customer.findOne({ _id: client });
-
             let productRecord = await product.findOne({ _id: prod });
-
             var valuePerMonth = (Number(salesV  * (rate / 100)));
-            // console.log('qty: '+qty+' - unitPrice: '+unit+' - rate: '+rate);
 
-            // if (installmentNumber > 1) {
-            //     var date = expirationInstallmentDate;
-            //     for (var i = 1; i <= installmentNumber; i++) {
-            //         const instRecord = new installments({
-            //             customerId: customerRecord._id,
-            //             productId: productRecord._id,
-            //             flgEnable: 1,
-            //             expirationDate: addMonth(date, i - 1),
-            //             installmentNumber: i,
-            //             value: valuePerMonth
-            //         });
-            //         await instRecord.save(); 
-            //     }
-            // }
-            let dtCreation = saleData.dtCreation;
-
-            if (typeof dtCreation === 'string') {
-                const [date, time] = dtCreation.split(', ');
-                const [day, month, year] = date.split('/');
-                dtCreation = new Date(`${year}-${month}-${day}T${time}`);
+            let dtCreation = saleData.dtTimestamp;
+            let Receivement = new Date(expirationInstallmentDate);
+            Receivement = Receivement.setMonth(Receivement.getMonth() + 1)
+            
+            if (typeof dtCreation === 'string' && dtCreation.includes(', ')) {
+              const [date, time] = dtCreation.split(', ');
+              const [day, month, year] = date.split('/');
+              dtCreation = new Date(`${year}-${month}-${day}T${time}`);
             }
 
             let newSale = new sales({
@@ -133,16 +206,12 @@ export default class SalesController {
                 commissionRate: rate,
                 commissionValue: valuePerMonth,
                 expirationInstallmentDate: expirationInstallmentDate,
+                receivementDate: Receivement,
                 dtCreation: dtCreation || new Date(),
                 dtTimestamp: saleData.dtTimestamp ? new Date(saleData.dtTimestamp) : new Date(),
             });
-            console.log(newSale)
-            const salesResponse = {};
-            try {
-                salesResponse = await newSale.save();
-            } catch (error) {
-                console.log(error)
-            }
+            const salesResponse = null;
+            salesResponse = await newSale.save();
             customerRecord.purchasesQty = customerRecord.purchasesQty + 1;
             
             await customerRecord.save();
@@ -159,6 +228,16 @@ export default class SalesController {
           const id = req.params.id;
           await sales.findByIdAndUpdate(id, {$set: req.body});
           res.status(200).send({message: "Updated successfully"});
+        } catch (error) {
+            res.status(400).send({ message: "Ocurred an error: ", status: error.status });
+        }
+    }
+
+    static deleteSales = async (req, res, next) => {
+        try  {
+            const id = req.params.id;
+            await sales.findByIdAndDelete(id);
+            res.status(200).send({message: "Deleted successfully"});
         } catch (error) {
             res.status(400).send({ message: "Ocurred an error: ", status: error.status });
         }

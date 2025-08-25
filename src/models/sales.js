@@ -29,7 +29,11 @@ const salesSchema = new mongoose.Schema(
     },
     expirationInstallmentDate: {
       type: Date,
-      required: [true, "A data do primeiro vencimento é obrigatória."],
+      required: [true, "A data do vencimento é obrigatória."],
+    },
+    receivementDate: {
+      type: Date,
+      required: [true]
     },
     dtCreation: { type: Date },
     dtTimestamp: { type: Date, required: [true] },

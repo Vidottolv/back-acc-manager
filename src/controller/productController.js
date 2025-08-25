@@ -25,7 +25,6 @@ export default class ProductController {
     }
 
     static postProduct = async (req, res, next) => {
-        console.log(req.body)
         try {
             let newProduct = new product({
                 ...req.body, 
